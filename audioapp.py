@@ -5,6 +5,7 @@ from PIL import Image
 import pytesseract
 import fitz  # PyMuPDF
 import io
+import pyttsx3   # offline TTS
 
 # ----------------- FUNCTIONS -----------------
 def pdf_to_text(pdf_file, pages):
@@ -53,8 +54,8 @@ def pdf_to_text(pdf_file, pages):
     return text
 
 
-def text_to_audio(text, lang='en'):
-    """Converts a string of text to an MP3 audio file."""
+def text_to_audio_gtts(text, lang='en'):
+    """Converts text to audio using gTTS (online)."""
     try:
         tts = gTTS(text=text, lang=lang, slow=False)
         audio_fp = io.BytesIO()
@@ -62,7 +63,24 @@ def text_to_audio(text, lang='en'):
         audio_fp.seek(0)
         return audio_fp
     except Exception as e:
-        st.error(f"Failed to generate audio: {e}")
+        st.error(f"Failed to generate audio (gTTS): {e}")
+        return None
+
+
+def text_to_audio_pyttsx3(text):
+    """Converts text to audio using pyttsx3 (offline)."""
+    try:
+        audio_fp = io.BytesIO()
+        engine = pyttsx3.init()
+        engine.save_to_file(text, "output_offline.mp3")  # saves to file
+        engine.runAndWait()
+        # Read file back into memory
+        with open("output_offline.mp3", "rb") as f:
+            audio_fp.write(f.read())
+        audio_fp.seek(0)
+        return audio_fp
+    except Exception as e:
+        st.error(f"Failed to generate audio (pyttsx3): {e}")
         return None
 
 
@@ -86,7 +104,7 @@ st.markdown("""
             padding: 12px 28px; border-radius: 10px; width: 100%; font-weight: 600; 
             transition: transform 0.2s, background-color 0.2s; animation: popIn 0.8s ease; }
         .stButton>button:hover { background-color: #3f4756; transform: translateY(-2px) scale(1.02); }
-        .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {
+        .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"], .stRadio label {
             background-color: #1a1e26; color: #e0e6f0; border: 1px solid #3a475a;
             border-radius: 8px; padding: 10px; transition: box-shadow 0.2s;
         }
@@ -117,13 +135,13 @@ st.markdown("""
 # --- Sidebar ---
 with st.sidebar:
     st.image("logocode.png", width=180)
-    st.markdown("## 📖 **PDF to Audio Converter**")
+    st.markdown("## 📖 *PDF to Audio Converter*")
     st.markdown("Easily transform your documents into an immersive listening experience. 🎧")
     st.markdown("---")
-    pdf_file = st.file_uploader("Upload your PDF", type=["pdf"], help="Select a PDF file to convert.")
-    page_input = st.text_input("Page Range", placeholder="e.g., 1-5 or 3", help="Specify pages to convert (optional).")
+    pdf_file = st.file_uploader("Upload your PDF", type=["pdf"])
+    page_input = st.text_input("Page Range", placeholder="e.g., 1-5 or 3")
 
-    # Language selection
+    # Language selection (for gTTS only)
     languages = {
         "English": "en",
         "Hindi (हिंदी)": "hi",
@@ -136,8 +154,11 @@ with st.sidebar:
         "Chinese (中文)": "zh-CN",
         "Japanese (日本語)": "ja"
     }
-    lang_choice = st.selectbox("Select Language", list(languages.keys()))
+    lang_choice = st.selectbox("Select Language (for gTTS)", list(languages.keys()))
     lang_code = languages[lang_choice]
+
+    # Choose TTS engine
+    engine_choice = st.radio("Choose TTS Engine:", ["Google gTTS (Online)", "pyttsx3 (Offline)"])
 
     st.markdown("---")
     convert_button = st.button("Convert to Audio 🚀")
@@ -145,8 +166,7 @@ with st.sidebar:
 # --- Main Area ---
 st.markdown('<div class="team-title">🚀 Team SquadCodez</div>', unsafe_allow_html=True)
 st.title("📚 PDF to Audio")
-st.markdown("Upload a PDF, choose a language, and click 'Convert' to generate an audio version of your document. "
-            "The app supports both text-based and scanned PDFs.")
+st.markdown("Upload a PDF, choose your language and TTS engine, then click 'Convert' to generate an audio version of your document.")
 
 if convert_button and pdf_file:
     try:
@@ -167,30 +187,28 @@ if convert_button and pdf_file:
         else:
             st.success("Text extracted successfully! ✅")
 
-            with st.expander("View Extracted Text"):
+            with st.expander("📜 View Extracted Text"):
                 st.text_area("Extracted Text", extracted_text, height=250)
 
             with st.spinner("Generating audio... This may take a moment."):
-                audio_file = text_to_audio(extracted_text, lang=lang_code)
+                if engine_choice == "Google gTTS (Online)":
+                    audio_file = text_to_audio_gtts(extracted_text, lang=lang_code)
+                else:
+                    audio_file = text_to_audio_pyttsx3(extracted_text)
 
             if audio_file:
-                st.success(f"Audio conversion complete in {lang_choice}! 🎉")
+                st.success(f"Audio conversion complete using {engine_choice}! 🎉")
                 st.audio(audio_file, format="audio/mp3")
 
-                # Download option
                 st.download_button(
                     label="💾 Download Audio",
                     data=audio_file,
                     file_name=f"output_{lang_code}.mp3",
                     mime="audio/mp3"
                 )
-                st.markdown("---")
             else:
-                st.error("Audio generation failed. Please try a different document.")
-
-    except ValueError:
-        st.error("Invalid page range format. Please use '5' or '2-8'.")
+                st.error("Audio generation failed. Please try again.")
     except Exception as e:
         st.error(f"An unexpected error occurred: {e}")
 elif convert_button:
-    st.warning("Please upload a PDF file to begin.")
+    st.warning("⚠ Please upload a PDF file to begin.")
